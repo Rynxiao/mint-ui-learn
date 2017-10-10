@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <title>picker</title>
+    <style>
+        .picker {
+            overflow: hidden;
+        }
+        .picker-items {
+            display: flex;
+            justify-content: center;
+            padding: 0;
+            text-align: center;
+            font-size: 24px;
+            position: relative;
+        }
+        .picker-center-highlight {
+            box-sizing: border-box;
+            position: absolute;
+            left: 0;
+            width: 100%;
+            top: 50%;
+            margin-top: -18px;
+            pointer-events: none;
+        }
+        .picker-center-highlight:before,
+        .picker-center-highlight:after {
+            content: '';
+            position: absolute;
+            height: 1px;
+            width: 100%;
+            background-color: #ccc;
+            display: block;
+            z-index: 15;
+            transform: scaleY(0.5);
+        }
+        .picker-center-highlight:before {
+            top: 0;
+            top: 0;
+            bottom: auto;
+            right: auto;
+        }
+        .picker-center-highlight:after {
+            left: 0;
+            bottom: 0;
+            top: auto;
+            right: auto;
+        }
+        .picker-slot {
+            font-size: 18px;
+            overflow: hidden;
+            position: relative;
+            max-height: 100%;
+        }
+        .picker-slot-wrapper {
+            transition-duration: 0.3s;
+            transition-timing-function: ease-out;
+            backface-visibility: hidden;
+        }
+        .picker-slot-wrapper.dragging, 
+        .picker-slot-wrapper.dragging .picker-item {
+            transition-duration: 0s;
+        }
+        .picker-item {
+            height: 36px;
+            line-height: 36px;
+            padding: 0 10px;
+            white-space: nowrap;
+            position: relative;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #707274;
+            left: 0;
+            top: 0;
+            width: 100%;
+            box-sizing: border-box;
+            transition-duration: .3s;
+            backface-visibility: hidden;
+        }
+
+        .picker-slot-absolute .picker-item {
+            position: absolute;
+        }
+
+        .picker-item.picker-item-far {
+            pointer-events: none;
+        }
+        .picker-item.picker-selected {
+            color: #000;
+            transform: translate3d(0, 0, 0) rotateX(0);
+        }
+        .picker-3d .picker-items {
+            overflow: hidden;
+            perspective: 700px;
+        }
+        .picker-3d .picker-item,
+        .picker-3d .picker-slot,
+        .picker-3d .picker-slot-wrapper {
+            transform-style: preserve-3d;
+        }
+        .picker-3d .picker-slot {
+            overflow: visible;
+        }
+        .picker-3d .picker-item {
+            transform-origin: center center;
+            backface-visibility: hidden;
+            transition-timing-function: ease-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="picker picker-3d">
+        <div class="picker-items">
+            <div class="picker-slot picker-slot-absolute" style="flex:1;">
+                <div class="picker-slot-wrapper" id="wrapper" style="height: 108px;">
+                    <div class="picker-item picker-selected" style="height:36px;line-height: 36px">夜的第七章</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">周杰伦</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">1983年小巷</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">12月晴朗</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">夜的第七章</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">打字机继续推向</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">接近事实的那下一行</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">石楠烟斗的雾</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">飘向枯萎的树</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">沉默地对我哭诉</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">贝克街旁的圆形广场</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">盔甲骑士背上</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">鸢尾花的徽章微亮</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">无人马车声响</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">深夜的拜访</div>
+                    <div class="picker-item" style="height:36px;line-height: 36px">邪恶在维多利亚的月光下</div>
+                </div>
+            </div>
+            <div class="picker-center-highlight" style="height:36px;margin-top:-18px;"></div>
+        </div>
+    </div>
+    <script src="./draggable.js"></script>
+    <script src="./translateUtil.js"></script>
+    <script>
+        var el = document.querySelector('#wrapper');
+        var animationFrameId = null;
+        var currentValue;
+        var itemHeight = 36;
+        var visibleItemCount = 3;
+        var valueIndex = 0;
+        var rotateEffect = true;
+
+        var VISIBEL_ITEMS_ANGLE_MAP = {
+            3: -45,
+            5: -20,
+            7: -15
+        };
+
+        function getDragRange() {
+            var valuesLength = 15;
+
+            return [ -itemHeight * (valuesLength - Math.ceil(visibleItemCount / 2)), itemHeight * Math.floor(visibleItemCount / 2)];
+        }
+
+        function value2Translate(valueIndex) {
+            var offset = Math.floor(visibleItemCount / 2);
+
+            if (valueIndex !== -1) {
+                return (valueIndex - offset) * -itemHeight;
+            }
+        }
+
+        function translate2Value(translate) {
+            translate = Math.round(translate / itemHeight) * itemHeight;
+            var index = -(translate - Math.floor(visibleItemCount / 2) * itemHeight) / itemHeight;
+            var items = el.querySelectorAll('.picker-item');
+
+            console.log(index);
+            [].forEach.call(items, function(item, index) {
+                item.classList.remove('picker-selected');
+            });
+
+            items[index].classList.add('picker-selected');
+        }
+
+        function initEvents() {
+            var dragState = {};
+            var velocityTranslate, prevTranslate, pickerItems;
+
+            draggable(el, {
+                start: function(event) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                    dragState = {
+                        range: getDragRange(),
+                        start: new Date(),
+                        startLeft: event.pageX,
+                        startTop: event.pageY,
+                        startTranslateTop: translateUtil.getElementTranslate(el).top
+                    };
+                    pickerItems = el.querySelectorAll('.picker-item');
+                },
+
+                drag: function(event) {
+                    el.classList.add('dragging');
+
+                    dragState.left = event.pageX;
+                    dragState.top = event.pageY;
+
+                    var deltaY = dragState.top - dragState.startTop;
+                    var translate = dragState.startTranslateTop + deltaY;
+
+                    translateUtil.translateElement(el, null, translate);
+                    velocityTranslate = translate - prevTranslate || translate;
+
+                    prevTranslate = translate;
+
+                    if (rotateEffect) {
+                        updateRotate(prevTranslate, pickerItems);
+                    }
+                }, 
+
+                end: function() {
+                    el.classList.remove('dragging');
+                    var momentumRatio = 7;
+                    var currentTranslate = translateUtil.getElementTranslate(el).top;
+                    var duration = new Date() - dragState.start;
+
+                    var momentumTranslate;
+                    if (duration < 300) {
+                        momentumTranslate = currentTranslate + velocityTranslate * momentumRatio;
+                    }
+
+                    console.log('momentumTranslate', momentumTranslate);
+
+                    dragRange = dragState.range;
+
+                    setTimeout(function() {
+                        var translate;
+                        if (momentumTranslate) {
+                            translate = Math.round(momentumTranslate / itemHeight) * itemHeight;
+                        } else {
+                            translate = Math.round(currentTranslate / itemHeight) * itemHeight;
+                        }
+
+                        translate = Math.max(Math.min(translate, dragRange[1]), dragRange[0]);
+                        translateUtil.translateElement(el, null, translate);
+
+                        currentValue = translate2Value(translate);
+
+                        if (rotateEffect) {
+                            planUpdateRotate();
+                        }
+                    }, 10);
+
+                    dragState = {};
+                }
+            });
+        }
+
+        function rotateElement(element, angle) {
+            if (!element) return;
+            var transformProperty = translateUtil.transformProperty;
+
+            element.style[transformProperty] = element.style[transformProperty].replace(/rotateX\(.+?deg\)/gi, '') + `rotateX(${angle}deg)`;
+        }
+
+        function updateRotate(currentTranslate, pickerItems) {
+            var dragRange = getDragRange();
+
+            if (!pickerItems) {
+                pickerItems = el.querySelectorAll('.picker-item');
+            }
+
+            if (currentTranslate === undefined) {
+                currentTranslate = translateUtil.getElementTranslate(el).top;
+            }
+
+            var itemFit = Math.ceil(visibleItemCount / 2);
+            var angleUnit = VISIBEL_ITEMS_ANGLE_MAP[visibleItemCount] || -20;
+
+            [].forEach.call(pickerItems, function(item, index) {
+                var itemOffsetTop = index * itemHeight;
+                var translateOffset = dragRange[1] - currentTranslate;
+                var itemOffset = itemOffsetTop - translateOffset;
+                var percentage = itemOffset / itemHeight;
+
+                var angle = angleUnit * percentage;
+                if (angle > 180) angle = 180;
+                if (angle < -180) angle = -180;
+
+                rotateElement(item, angle);
+
+                if (Math.abs(percentage) > itemFit) {
+                    item.classList.add('picker-item-far');
+                } else {
+                    item.classList.remove('picker-item-far');
+                }
+            });
+        }
+
+        function planUpdateRotate() {
+            cancelAnimationFrame(animationFrameId);
+
+            animationFrameId = requestAnimationFrame(function() {
+                updateRotate();
+            });
+
+            el.addEventListener(translateUtil.transitionProperty, function() {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            });
+        }
+
+        function doOnValueChange() {
+            translateUtil.translateElement(el, null, value2Translate(valueIndex));
+        }
+
+        function doOnValuesChange() {
+            var items = el.querySelectorAll('.picker-item');
+            [].forEach.call(items, function(item, index) {
+                translateUtil.translateElement(item, null, itemHeight * index);
+            });
+            if (rotateEffect) {
+                planUpdateRotate();
+            }
+        }
+
+        function mounted() {
+            initEvents();
+            doOnValueChange();
+            if (rotateEffect) {
+                doOnValuesChange();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', mounted);
+    </script>
+</body>
+</html>
