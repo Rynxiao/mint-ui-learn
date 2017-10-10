@@ -4,6 +4,8 @@
 
 这个个人在使用饿了么前端库时候的一些总结，希望所有爱学习的童鞋一起共勉！！！
 
+个人分析：[http://www.cnblogs.com/rynxiao/p/7640647.html](http://www.cnblogs.com/rynxiao/p/7640647.html)
+
 ## swiper
 ![swiper](./shot/swiper.gif)
 
