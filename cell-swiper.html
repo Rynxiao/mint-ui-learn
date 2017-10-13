@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>cell swiper</title>
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+        .c-cell-swiper {
+            position: relative;
+            border-bottom: 1px solid #ccc;
+        }
+        .cell-content {
+            width: 100%;
+            overflow: hidden;
+            padding: 0 10px;
+            box-sizing: border-box;
+            background-color: #fff;
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 2;
+        }
+        .cell-content .your-code {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        .cell-content .left {
+            float: left;
+            padding: 15px 0;
+            margin-left: 58px;
+        }
+        .cell-content .icon {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 48px;
+            height: 48px;
+            margin-top: -24px;
+            display: inline-block;
+            border-radius: 4px;
+        }
+        .cell-content .left .sub {
+            color: #ccc;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .cell-content .right {
+            float: right;
+            padding: 15px 0;
+            font-size: 12px;
+            color: #666;
+        }
+        .cell-btn-group {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            z-index: 1;
+            display: flex;
+        }
+        .cell-btn-group .cell-btn {
+            flex-shrink: 0;
+            height: 100%;
+            min-width: 60px;
+            text-align: center;
+            padding: 0 10px;
+            color: #fff;
+        }
+        .cell-btn-group .cell-btn:first-child {
+            background-color: #999;
+        }
+        .cell-btn-group .cell-btn:last-child {
+            background-color: #f00;
+        }
+    </style>
+</head>
+<body>
+    <div class="c-cell-swiper" id="wrapper">
+        <div class="cell-content" id="content">
+            <div class="your-code">
+                <img class="icon" src="./images/t.jpg"></img>
+                <div class="left">
+                    <span>萌萌的卡洛奇</span>
+                    <p class="sub">我这个月要来看你啦</p>
+                </div>
+                <div class="right">now</div>
+            </div>
+        </div>
+        <div class="cell-btn-group" id="btnGroup">
+            <div class="cell-btn">标为未读</div>
+            <div class="cell-btn">删除</div>
+        </div>
+    </div>
+    <script>
+        var el = document.querySelector('#content');
+        var btn = document.querySelector('#btnGroup');
+        var wrapper = document.querySelector('#wrapper');
+        var swiping = false;
+        var opened = false;
+        var btnGroupWidth = 0;
+        var wrapperHeight = 48;
+        var dragState = {};
+        var prevent = true;
+        var stopPropagation = true;
+        var userScrolling = false;
+        var animating = false;
+
+        function getBtnGroupWidth() {
+            btnGroupWidth = btn.getBoundingClientRect().width;
+            wrapperHeight = el.getBoundingClientRect().height;
+            wrapper.style.height = wrapperHeight + 'px';
+            el.children[0].style.height = wrapperHeight + 'px';
+            btn.style.lineHeight = wrapperHeight + 'px';
+        }
+
+        function translate(element, offset, speed) {
+            if (speed) {
+                animating = true;
+                element.style.webkitTransition = `-webkit-transform ${speed}ms ease-in-out`;
+                setTimeout(function() {
+                    element.style.webkitTransform = `translate(${offset}px, 0) translateZ(0)`;
+                }, 50);
+            } else {
+                element.style.webkitTransition = '';
+                element.style.webkitTransform = `translate(${offset}px, 0) translateZ(0)`;
+            }
+        }
+
+        function doOnTouchStart(event) {
+            var touch = event.touches[0];
+
+            dragState.startTime = new Date();
+            dragState.startLeft = touch.pageX;
+            dragState.startTop = touch.pageY;
+
+            swiping = true;
+        }
+
+        function doOnTouchMove(event) {
+            var touch = event.touches[0];
+
+            dragState.currentLeft = touch.pageX;
+            dragState.currentTop = touch.pageY;
+
+            var offsetLeft = dragState.currentLeft - dragState.startLeft;
+            var offsetTop = dragState.currentTop - dragState.startTop;
+
+            var distanceX = Math.abs(offsetLeft);
+            var distanceY = Math.abs(offsetTop);
+            if (distanceX < 5 || ( distanceY >= 5 && distanceY >= 1.73 * distanceX )) {
+                userScrolling = true;
+                return;
+            } else {
+                userScrolling = false;
+                event.preventDefault();
+            }
+
+            if (offsetLeft > 0) {
+                offsetLeft = offsetLeft - btnGroupWidth;
+                if (!opened) {
+                    return;
+                }
+            } else {
+                if (opened) {
+                    return;
+                }
+            }
+
+            offsetLeft = Math.min(Math.max(-btnGroupWidth, offsetLeft), 0);
+            translate(el, offsetLeft);
+        }
+
+        function doOnTouchEnd() {
+            var dragDuration = new Date() - dragState.startTime;
+            var offsetLeft = dragState.currentLeft - dragState.startLeft;
+            var offsetTop = dragState.currentTop - dragState.startTop;
+
+            if (dragDuration < 300) {
+                var fireTap = Math.abs(offsetLeft) < 5 && Math.abs(offsetTop < 5);
+                if (isNaN(offsetLeft) || isNaN(offsetTop)) {
+                    fireTap = true;
+                }
+                if (fireTap) {
+                    translate(el, 0, 150);
+                    opened = false;
+                    swiping = false;
+                    return;
+                }
+            }
+
+            var distanceX = Math.abs(offsetLeft);
+
+            if (distanceX > btnGroupWidth * 0.4 && offsetLeft < 0) {
+                translate(el, -btnGroupWidth, 150);
+                opened = true;
+            } else {
+                translate(el, 0, 150);
+                opened = false;
+            }
+
+            dragState = {};
+        }
+
+        function mounted() {
+            getBtnGroupWidth();
+
+            el.addEventListener('touchstart', function(event) {
+                if (prevent) {
+                    event.preventDefault();
+                }
+
+                if (stopPropagation) {
+                    event.stopPropagation();
+                }
+
+                if (swiping) {
+                    return;
+                }
+
+                doOnTouchStart(event);
+            });
+
+            el.addEventListener('touchmove', function(event) {
+                if (!swiping) {
+                    return;
+                }
+
+                doOnTouchMove(event);
+            });
+
+            el.addEventListener('touchend', function(event) {
+                if (userScrolling) {
+                    swiping = false;
+                    dragState = {};
+                }
+
+                doOnTouchEnd();
+
+                swiping = false;
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', mounted);
+
+    </script>
+</body>
+</html>

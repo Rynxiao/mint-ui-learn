@@ -11,3 +11,6 @@
 
 ## picker
 ![picker](./shot/picker.gif)
+
+## cellSwiper
+![cellSwiper](./shot/cellSwiper.gif)
