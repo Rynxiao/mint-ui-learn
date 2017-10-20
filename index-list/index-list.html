@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <title>index-list</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div class="indexlist">
+        <ul class="indexlist-content" id="content">
+        </ul>
+        <div class="indexlist-nav" id="nav">
+            <ul class="indexlist-navlist" id="navList">
+            </ul>
+        </div>
+        <div class="indexlist-indicator" style="display: none;" id="indicator"></div>
+    </div>
+    <script src='./data.js'></script>
+    <script>
+        var content = document.querySelector('#content');
+        var nav = document.querySelector('#nav');
+        var navList = document.querySelector('#navList');
+        var indicator = document.querySelector('#indicator');
+        var currentHeight;
+        var navOffsetX = 0;
+        var indicatorTime = null;
+        var firstSection = null;
+        var moving = false;
+        var sections = [];
+        var currentIndicator = '';
+
+        function handleTouchstart(e) {
+            if (e.target.tagName !== 'LI') {
+              return;
+            }
+
+            navOffsetX = e.changedTouches[0].clientX;
+            scrollList(e.changedTouches[0].clientY);
+            if (indicatorTime) {
+              clearTimeout(indicatorTime);
+            }
+            moving = true;
+            window.addEventListener('touchmove', handleTouchMove, { passive: false });
+            window.addEventListener('touchend', handleTouchEnd);
+        }
+
+        function handleTouchMove(e) {
+            e.preventDefault();
+            scrollList(e.changedTouches[0].clientY);
+        }
+
+        function handleTouchEnd(e) {
+            indicatorTime = setTimeout(() => {
+                moving = false;
+                currentIndicator = '';
+                indicator.style.display = 'none';
+                indicator.innerText = currentIndicator;
+            }, 500);
+            window.removeEventListener('touchmove', handleTouchMove);
+            window.removeEventListener('touchend', handleTouchEnd);
+        }
+
+        function scrollList(y) {
+            var currentItem = document.elementFromPoint(navOffsetX, y);
+            if (!currentItem || !currentItem.classList.contains('indexlist-navitem')) {
+                return;
+            }
+            currentIndicator = currentItem.innerText;
+            indicator.innerText = currentIndicator;
+            indicator.style.display = '';
+
+            var targets = [].slice.call(sections).filter(function(section) { 
+                var index = section.getAttribute('data-index');
+                return index === currentItem.innerText;
+            });
+            var targetDOM;
+            if (targets.length > 0) {
+              targetDOM = targets[0];
+              content.scrollTop = targetDOM.getBoundingClientRect().top - firstSection.getBoundingClientRect().top;
+              // targetDOM.scrollIntoView();
+            }
+        }
+
+        function initialDOM() {
+            var data = D.data;
+            var contentHtml = '';
+            var navHtml = '';
+            // 初始化内容和NAV
+            data.forEach(function(d) {
+                var index = d.index;
+                var items = d.items;
+                navHtml += '<li class="indexlist-navitem">'+ index +'</li>';
+                contentHtml += '<li class="indexsection" data-index="'+ index +'"><p class="indexsection-index">'+ index +'</p><ul>';
+                items.forEach(function(item) {
+                    contentHtml += '<a class="cell"><div class="cell-wrapper"><div class="cell-title"><span class="cell-text">'+ item +'</span></div></div></a>'
+                });
+                contentHtml += '</ul></li>';
+            });
+
+            content.innerHTML = contentHtml;
+            navList.innerHTML = navHtml;
+        }
+
+        function mounted() {
+            var currentHeight, navWidth;
+
+            initialDOM();
+
+            if (!currentHeight) {
+                currentHeight = document.documentElement.clientHeight - content.getBoundingClientRect().top;
+            }
+            navWidth = nav.clientWidth;
+            content.style.marginRight = navWidth + 'px';
+            content.style.height = currentHeight + 'px';
+
+            sections = content.getElementsByTagName('li');
+            firstSection = sections[0];
+        }
+
+        document.addEventListener('DOMContentLoaded', mounted);
+        nav.addEventListener('touchstart', handleTouchstart);
+    </script>
+</body>
+</html>
