@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>load-more</title>
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <style>
+        @keyframes loading {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        * {
+            box-sizing: border-box;
+            padding: 0;
+            margin: 0;
+        }
+        html,body {
+            width: 100%;
+            height: 100%;
+        }
+        .page-loadmore-wrapper {
+            overflow: scroll;
+            width: 100%;
+            height: 100%;
+        }
+        .loadmore {
+            overflow: hidden;
+        }
+        .loadmore-content.is-dropped {
+            -webkit-transition: .2s;
+            transition: .2s;
+        }
+        .loadmore-bottom, .loadmore-top {
+            text-align: center;
+            height: 50px;
+            line-height: 50px;
+        }
+        .loadmore-top {
+            margin-top: -50px;
+        }
+        .loadmore-bottom {
+            margin-bottom: -50px;
+            text-align: center;
+        }
+        .loadmore-top span, .loadmore-bottom span {
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .loading-background, 
+        .loadmore-top span, 
+        .loadmore-bottom span {
+            -webkit-transition: .2s linear;
+            transition: .2s linear;
+        }
+        .loadmore-bottom .loading-pic {
+            width: 40px;
+            height: 40px;
+            display: inline-block;
+            background: url('./loading.png') center no-repeat;
+            background-size: 40px 40px;
+            margin-top: 5px;
+            animation: loading 1s infinite; 
+        }
+        .page-loadmore-listitem {
+            height: 50px;
+            line-height: 50px;
+            text-align: center;
+            border-bottom: 1px solid #eee;
+        }
+        .page-loadmore-listitem:first-child {
+            border-top: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-loadmore-wrapper">
+        <div id='loadMore' class="loadmore">
+            <div id="loadMoreContent" class="loadmore-content">
+                <ul class="page-loadmore-list" id="loadMoreList"></ul>
+            </div>
+        </div>
+    </div>
+    <script src='./event.js'></script>
+    <script>
+        (function() {
+            function LoadMore(cfg) {
+                // 对象拥有属性
+                this.translate = 0;
+                this.scrollEventTarget = null;
+                this.containerFilled = false;
+                this.topText = '';
+                this.topDropped = false;
+                this.bottomText = '';
+                this.bottomDropped = false;
+                this.bottomReached = false;
+                this.direction = '';
+                this.startY = 0;
+                this.startScrollTop = 0;
+                this.currentY = 0;
+                this.topStatus = '';
+                this.bottomStatus = '';
+                this.$el = document.querySelector('#loadMore');
+                this.list = [];
+
+                // 可配置参数
+                this.config = {
+                    listId: 'loadMoreList',
+                    listItemTemplate: '<li class="page-loadmore-listitem">{{item}}</li>',
+                    tFreshTemplate: '',
+                    bFreshTemplate: '',
+                    autoFill: true,
+                    distanceIndex: 2,
+                    maxDistance: 0,
+                    topPullText: '下拉刷新',
+                    topDropText: '释放更新',
+                    topLoadingText: '加载中...',
+                    topDistance: 70,
+                    topMethod: null,
+                    bottomPullText: '上拉刷新',
+                    bottomDropText: '释放更新',
+                    bottomLoadingText: '加载中...',
+                    bottomDistance: 70,
+                    bottomMethod: null,
+                    bottomAllLoaded: false
+                };
+
+                this.$listWrapper = document.querySelector('#' + this.config.listId);
+
+                for (var key in cfg) {
+                    if (cfg.hasOwnProperty(key)) {
+                        this.config[key] = cfg[key];
+                    }
+                }
+
+                this.init();
+            }
+
+            LoadMore.prototype = Object.assign({}, LoadMore.prototype, {
+                /**
+                 * 初始化
+                 * @return void
+                 */
+                init: function() {
+                    var _this = this;
+                    // 注册事件
+                    this.registerEvent();
+
+                    // 增加上拉和下拉提示的DOM
+                    this.appendStatusDOM();
+
+                    this.topText = this.config.topPullText;
+                    this.scrollEventTarget = this.getScrollEventTarget(this.$el);
+
+                    Event.trigger('topStatus', 'pull');
+                    Event.trigger('bottomStatus', 'pull');
+
+                    // 加载最开始的数据
+                    this.config.initData(function(list) {
+                        for (var i = 0; i < list.length; i++) {
+                            var domStr = _this.config.listItemTemplate.replace(/\{\{item\}\}/g, list[i]);
+                            var liElement = _this.parseDom(domStr);
+                            _this.$listWrapper.appendChild(liElement);
+                        }
+
+                        _this.list = _this.list.concat(list);
+                    });
+
+                    if (typeof this.config.bottomMethod === 'function') {
+                        this.fillContainer();
+                        this.bindTouchEvents();
+                    }
+
+                    if (typeof this.config.topMethod === 'function') {
+                        this.bindTouchEvents();
+                    }
+                },
+
+                /**
+                 * 获取模板字符串DOM
+                 * @param  String domTemplate dom字符串
+                 * @return DOMNode
+                 */
+                parseDom(domTemplate) {
+                    var objE = document.createElement("div");
+                　　objE.innerHTML = domTemplate;
+                　　return objE.childNodes[0];
+                },
+
+                /**
+                 * 注册状态改变事件
+                 * @return void
+                 */
+                registerEvent: function() {
+                    var _this = this;
+
+                    // 下拉刷新状态监听
+                    Event.listen('topStatus', function(val) {
+                        var status = document.querySelector('#loadMoreTop .status');
+                        var loading = document.querySelector('#loadMoreTop .loading');
+
+                        switch(val) {
+                            case 'pull':
+                                _this.topText = _this.config.topPullText;
+                                break;
+                            case 'drop':
+                                _this.topText = _this.config.topDropText;
+                                break;
+                            case 'loading': 
+                                _this.topText = _this.config.topLoadingText;
+                                break;    
+                        }
+
+                        if (val !== 'loading') {
+                            status.textContent = _this.topText;
+                            status.style.display = '';
+                            loading.style.display = 'none';
+                        } else {
+                            status.style.display = 'none';
+                            loading.style.display = '';
+
+                            if (!_this.config.tFreshTemplate) {
+                                loading.textContent = _this.topText;
+                            } 
+                        }
+                    });
+
+                    // 上拉加载状态监听
+                    Event.listen('bottomStatus', function(val) {
+                        var status = document.querySelector('#loadMoreBottom .status');
+                        var loading = document.querySelector('#loadMoreBottom .loading');
+
+                        switch(val) {
+                            case 'pull':
+                                _this.bottomText = _this.config.bottomPullText;
+                                break;
+                            case 'drop':
+                                _this.bottomText = _this.config.bottomDropText;
+                                break;
+                            case 'loading': 
+                                _this.bottomText = _this.config.bottomLoadingText;
+                                break;    
+                        }
+
+                        if (val !== 'loading') {
+                            status.textContent = _this.bottomText;
+                            status.style.display = '';
+                            loading.style.display = 'none';
+                        } else {
+                            status.style.display = 'none';
+                            loading.style.display = '';
+
+                            if (!_this.config.bFreshTemplate) {
+                                loading.textContent = _this.bottomText;
+                            } 
+                        }
+                    });
+
+                    // 数据监听, 渲染数据
+                    Event.listen('data', function(list) {
+                        if (!list || list.length === 0) {
+                            return;
+                        }
+
+                        for (var i = 0; i < list.length; i++) {
+                            var domStr = _this.config.listItemTemplate.replace(/\{\{item\}\}/g, list[i]);
+                            var liElement = _this.parseDom(domStr);
+                            _this.$listWrapper.appendChild(liElement);
+                        }
+
+                        _this.list = list.concat(list);
+                    });
+
+                    /**
+                     * 监听数据刷新
+                     * @param  {[type]} list) 
+                     * @return void
+                     */
+                    Event.listen('fresh', function(list) {
+                        if (!list || list.length === 0) {
+                            return;
+                        }
+
+                        _this.$listWrapper.style.display = 'none';
+                        _this.$listWrapper.remove();
+                        var $newListWrapper = _this.parseDom('<ul class="page-loadmore-list" id="loadMoreList"></ul>');
+                        _this.$listWrapper = $newListWrapper;
+
+                        for (var i = 0; i < list.length; i++) {
+                            var domStr = _this.config.listItemTemplate.replace(/\{\{item\}\}/g, list[i]);
+                            var liElement = _this.parseDom(domStr);
+                            $newListWrapper.appendChild(liElement);
+                        }
+
+                        var loadMoreContent = document.querySelector('#loadMoreContent');
+                        var loadMoreBottom = document.querySelector('#loadMoreBottom');
+                        if (loadMoreBottom) {
+                            loadMoreContent.insertBefore($newListWrapper, loadMoreBottom);
+                        } else {
+                            loadMoreContent.appendChild($newListWrapper);
+                        }
+
+                        _this.list = list;
+                    });
+
+                    /**
+                     * 监听移动
+                     * @param  {[type]} offset) 
+                     * @return void
+                     */
+                    Event.listen('translate', function(offset) {
+                        var loadMoreContent = document.querySelector('#loadMoreContent');
+                        loadMoreContent.style.transform = 'translate3d(0, '+ offset +'px, 0)';
+                        _this.translate = offset;
+                    });
+
+                    /**
+                     * 监听下拉刷新时的滑动状态是否为drop
+                     * @param  {Boolean} isDropped) 
+                     * @return void
+                     */
+                    Event.listen('topDropped', function(isDropped) {
+                        var loadMoreContent = document.querySelector('#loadMoreContent');
+                        if (isDropped) {
+                            loadMoreContent.classList.add('is-dropped');
+                        } else {
+                            loadMoreContent.classList.remove('is-dropped');
+                        }
+
+                        _this.topDropped = isDropped;
+                    });
+
+                    /**
+                     * 监听上拉加载时的滑动状态是否为drop
+                     * @param  {Boolean} isDropped) 
+                     * @return void
+                     */
+                    Event.listen('bottomDropped', function(isDropped) {
+                        var loadMoreContent = document.querySelector('#loadMoreContent');
+                        if (isDropped) {
+                            loadMoreContent.classList.add('is-dropped');
+                        } else {
+                            loadMoreContent.classList.remove('is-dropped');
+                        }
+
+                        _this.bottomDropped = isDropped;
+                    });
+                },
+
+                /**
+                 * 增加下拉刷新和上拉加载的DOM
+                 * @return void
+                 */
+                appendStatusDOM: function() {
+                    var loadMoreContent = document.querySelector('#loadMoreContent');
+                    var tFreshTemplate = this.config.tFreshTemplate || '<span class="loading" style="display: none;"></span>';
+                    var bFreshTemplate = this.config.bFreshTemplate || '<span class="loading" style="display: none;"></span>';
+                    if (this.config.topMethod) {
+                        var template = '<div class="loadmore-top" id="loadMoreTop"><span class="status" style=""></span>' 
+                            + tFreshTemplate + '</div>';
+                        var tFresh = this.parseDom(template);
+                        loadMoreContent.insertBefore(tFresh, this.$listWrapper);
+                    }
+
+                    if (this.config.bottomMethod) {
+                        var template = '<div class="loadmore-bottom" id="loadMoreBottom"><span class="status" style=""></span>' 
+                            + bFreshTemplate + '</div>';
+                        var bFresh = this.parseDom(template);
+                        loadMoreContent.appendChild(bFresh);
+                    }
+                },
+
+                /**
+                 * 获取滚动容器
+                 * @param  DOM element 
+                 * @return 
+                 */
+                getScrollEventTarget: function(element) {
+                    var currentNode = element;
+                    while (currentNode && currentNode.tagName !== 'HTML' &&
+                        currentNode.tagName !== 'BODY' && currentNode.nodeType === 1) {
+                        var overflowY = document.defaultView.getComputedStyle(currentNode).overflowY;
+                        if (overflowY === 'scroll' || overflowY === 'auto') {
+                            return currentNode;
+                        }
+                        currentNode = currentNode.parentNode;
+                    }
+                    return window;
+                },
+
+                /**
+                 * 自动填充容器，加载数据
+                 * @return void
+                 */
+                fillContainer: function() {
+                    var _this = this;
+
+                    // 如果自动填充
+                    if (this.config.autoFill) {
+                        // 根据滚动容器来判断当前数据是否已经填充满容器
+                        if (this.scrollEventTarget === window) {
+                            this.containerFilled = this.$el.getBoundingClientRect().bottom >=
+                            document.documentElement.getBoundingClientRect().bottom;
+                        } else {
+                            this.containerFilled = this.$el.getBoundingClientRect().bottom >=
+                            this.scrollEventTarget.getBoundingClientRect().bottom;
+                        }
+
+                        // 如果数据没有填充满容器，则加载数据
+                        if (!this.containerFilled) {
+                            Event.trigger('bottomStatus', 'loading');
+                            Event.trigger('translate', -50);
+                            var data = this.config.bottomMethod(function(list) {
+                                Event.trigger('data', list);
+                                Event.trigger('bottomStatus', 'pull');
+                                Event.trigger('translate', 0);
+                            });
+                        }
+                    }
+                },
+
+                /**
+                 * 绑定滑动事件
+                 * @return void
+                 */
+                bindTouchEvents: function() {
+                    this.$el._this = this;
+                    this.$el.addEventListener('touchstart', this.handleTouchStart);
+                    this.$el.addEventListener('touchmove', this.handleTouchMove);
+                    this.$el.addEventListener('touchend', this.handleTouchEnd);
+                },
+
+                /**
+                 * 获取当前元素的scrollTop值
+                 * @param  DOM element 
+                 * @return number scrollTop值
+                 */
+                getScrollTop: function(element) {
+                    if (element === window) {
+                        return Math.max(window.pageYOffset || 0, document.documentElement.scrollTop);
+                    } else {
+                        return element.scrollTop;
+                    }
+                },
+
+                /**
+                 * 向上拉的时候检测是否已经到底底部
+                 * @return Boolean  是否已经到底部
+                 */
+                checkBottomReached: function() {
+                    // 到达底部的条件
+                    // 1. 如果容器是window，那么就是 滚动高度 + 窗口高度 >= 整个文档高度
+                    // 2. 如果容器是自己定义的DOM，那么就是里面滚动内容的底部值是否已经大于容器的底部值
+                    if (this.scrollEventTarget === window) {
+                        return document.body.scrollTop + document.documentElement.clientHeight >= document.body.scrollHeight;
+                    } else {
+                        return this.$el.getBoundingClientRect().bottom <= this.scrollEventTarget.getBoundingClientRect().bottom + 1;
+                    }
+                },
+
+                /**
+                 * 刷新数据加载完成
+                 * @param Array list 刷新列表
+                 * @return void
+                 */
+                onTopLoaded: function(list) {
+                    var _this = this;
+
+                    Event.trigger('translate', 0);
+                    Event.trigger('fresh', list);
+                    setTimeout(function() {
+                        Event.trigger('topStatus', 'pull');
+
+                        if (!_this.bottomAllLoaded && !_this.containerFilled) {
+                            _this.fillContainer();
+                        }
+                    }, 200);
+                },
+
+                /**
+                 * 加载数据
+                 * @param Array list 刷新列表
+                 * @param Boolean isAllLoaded 数据是否加载完成
+                 * @return void
+                 */
+                onBottomLoaded: function(list, isAllLoaded) {
+                    Event.trigger('bottomStatus', 'pull');
+                    Event.trigger('bottomDropped', false);
+                    Event.trigger('data', list);
+
+                    if (this.scrollEventTarget === window) {
+                        document.body.scrollTop += 50;
+                    } else {
+                        this.scrollEventTarget.scrollTop += 50;
+                    }
+
+                    Event.trigger('translate', 0);
+                    this.bottomAllLoaded = isAllLoaded;
+                },
+
+                /**
+                 * 滑动开始
+                 * @param  event
+                 * @return void
+                 */
+                handleTouchStart: function(event) {
+                    var _this = this._this;
+                    _this.startY = event.touches[0].clientY;
+                    _this.startScrollTop = _this.getScrollTop(_this.scrollEventTarget);
+                    _this.bottomReached = false;
+
+                    if (_this.topStatus !== 'loading') {
+                        Event.trigger('topDropped', false);
+                        Event.trigger('topStatus', 'pull');
+                    }
+
+                    if (_this.bottomStatus !== 'loading') {
+                        Event.trigger('bottomDropped', false);
+                        Event.trigger('bottomStatus', 'pull');
+                    }
+                },
+
+                /**
+                 * 滑动中
+                 * @param  event 
+                 * @return void
+                 */
+                handleTouchMove: function(event) {
+                    var _this = this._this;
+                    if (_this.startY < _this.$el.getBoundingClientRect().top && _this.startY > _this.$el.getBoundingClientRect().bottom) {
+                        return;
+                    }
+
+                    // 获取滑动位移并得出方向
+                    _this.currentY = event.touches[0].clientY;
+
+                    var distance = (_this.currentY - _this.startY) / _this.config.distanceIndex;
+                    _this.direction = distance > 0 ? 'down' : 'up';
+
+                    // 下移条件
+                    // 1. 必须有刷新函数
+                    // 2. 方向为向下
+                    // 3. 初始的scrollTop为0
+                    // 4. 状态不为加载中
+                    if (typeof _this.config.topMethod === 'function' && _this.direction === 'down' &&
+                        _this.getScrollTop(_this.scrollEventTarget) === 0 && _this.topStatus !== 'loading') {
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        if (_this.config.maxDistance > 0) {
+                            _this.translate = distance <= _this.config.maxDistance ? distance - _this.startScrollTop : _this.translate;
+                        } else {
+                            _this.translate = distance - _this.startScrollTop;
+                        }
+
+                        if (_this.translate < 0) {
+                            _this.translate = 0;
+                        }
+
+                        _this.topStatus = _this.translate >= _this.config.topDistance ? 'drop' : 'pull';
+
+                        Event.trigger('topStatus', _this.topStatus);
+                        Event.trigger('translate', _this.translate);
+                    }
+
+                    // 如果方向向上，则每次移动检测是否到最底边了
+                    if (_this.direction === 'up') {
+                        _this.bottomReached = _this.bottomReached || _this.checkBottomReached();
+                    }
+
+                    // 上拉加载条件
+                    // 1. 必须有加载函数
+                    // 2. 方向为向上
+                    // 3. 是否已经到达底部
+                    // 4. 加载状态不为loading
+                    // 5. 数据没有加载完全
+                    if (typeof _this.config.bottomMethod === 'function' && _this.direction === 'up' &&
+                        _this.bottomReached && _this.bottomStatus !== 'loading' && !_this.bottomAllLoaded) {
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        if (_this.config.maxDistance > 0) {
+                            _this.translate = Math.abs(distance) <= _this.config.maxDistance
+                              ? _this.getScrollTop(_this.scrollEventTarget) - _this.startScrollTop + distance : _this.translate;
+                        } else {
+                            _this.translate = _this.getScrollTop(_this.scrollEventTarget) - _this.startScrollTop + distance;
+                        }
+
+                        if (_this.translate > 0) {
+                            _this.translate = 0;
+                        }
+
+                        _this.bottomStatus = -_this.translate >= _this.config.bottomDistance ? 'drop' : 'pull';
+                        Event.trigger('bottomStatus', _this.bottomStatus);
+                        Event.trigger('translate', _this.translate);
+                    }
+                },
+
+                /**
+                 * 滑动结束
+                 * @return void
+                 */
+                handleTouchEnd: function() {
+                    var _this = this._this;
+                    if (_this.direction === 'down' && _this.getScrollTop(_this.scrollEventTarget) === 0 && _this.translate > 0) {
+                        Event.trigger('topDropped', true);
+
+                        if (_this.topStatus === 'drop') {
+                            Event.trigger('topStatus', 'loading');
+                            Event.trigger('translate', 50);
+
+                            // 加载数据
+                            _this.config.topMethod(function() {
+                                var args = [].slice.call(arguments);
+                                _this.onTopLoaded.apply(_this, args);
+                            });
+                        } else {
+                            Event.trigger('translate', 0);
+                            Event.trigger('topStatus', 'pull');
+                        }
+                    }
+
+                    if (_this.direction === 'up' && _this.bottomReached && _this.translate < 0) {
+                        
+                        Event.trigger('bottomDropped', true);
+                        _this.bottomReached = false;
+
+                        if (_this.bottomStatus === 'drop') {
+                            Event.trigger('bottomStatus', 'loading');
+                            Event.trigger('translate', -50);
+
+                            // 加载数据
+                            _this.config.bottomMethod(function() {
+                                var args = [].slice.call(arguments);
+                                _this.onBottomLoaded.apply(_this, args);
+                            });
+                        } else {
+                            Event.trigger('translate', 0);
+                            Event.trigger('bottomStatus', 'pull');
+                        }
+                    }
+
+                    _this.direction = '';
+                }   
+            });
+
+            var loadMore = new LoadMore({
+                topPullText: '↓',
+                topDropText: '↑',
+                bFreshTemplate: '<span class="loading" style="display: none;"><i class="loading-pic"></i></span>',
+
+                // 初始化数据
+                initData: function(cb) {
+                    var list = [];
+                    setTimeout(function() {
+                        for(var i = 0; i < 10; i++) {
+                            list.push('item' + (i + 1));
+                        }
+
+                        cb && cb(list);
+                    }, 0);
+                },
+
+                // 上拉加载数据
+                bottomMethod: function(cb) {
+                    var list = [];
+                    var isAllLoaded = false;
+                    setTimeout(function() {
+                        for(var i = 0; i < 10; i++) {
+                            list.push('new item' + (i + 1));
+                        }
+
+                        isAllLoaded = list.length >= 100;
+                        cb && cb(list, isAllLoaded);
+                    }, 2000);
+                },
+
+                // 下拉刷新数据
+                topMethod: function(cb) {
+                    var list = [];
+                    setTimeout(function() {
+                        for(var i = 0; i < 10; i++) {
+                            list.push('item' + (i + 1));
+                        }
+                        cb && cb(list);
+                    }, 2000);
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
