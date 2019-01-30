@@ -1,4 +1,4 @@
-# 饿了么vue组件库学习 Learn component From Element
+# Learn component From Element
 
 Personal Analyze：[http://www.cnblogs.com/rynxiao/p/7640647.html](http://www.cnblogs.com/rynxiao/p/7640647.html)
 
